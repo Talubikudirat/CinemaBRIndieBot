@@ -34,7 +34,7 @@ class TelegraphUploader:
             "children": ["Confira os principais festivais, notícias e premiações do cinema independente brasileiro."]
         })
         
-        # AD PLACEMENT 1 - Replace with your ad code
+        # AD PLACEMENT 1
         content.append({
             "tag": "p",
             "children": [
