@@ -34,15 +34,14 @@ class CinemaBRScraper:
             url = "https://www.festivaldorio.com.br"
             response = self.safe_get(url)
             if response:
-                soup = BeautifulSoup(response.text, 'html.parser')
                 festivals_data.append({
                     'name': 'Festival do Rio',
                     'description': 'Festival Internacional de Cinema do Rio de Janeiro',
                     'link': url,
                     'deadline': 'Verifique site oficial'
                 })
-        except Exception as e:
-            print(f"Error: {e}")
+        except:
+            pass
         
         # Festival de Gramado
         try:
@@ -55,8 +54,8 @@ class CinemaBRScraper:
                     'link': url,
                     'deadline': 'Inscrições abertas - Verifique site'
                 })
-        except Exception as e:
-            print(f"Error: {e}")
+        except:
+            pass
         
         # Mostra de Tiradentes
         try:
@@ -69,8 +68,8 @@ class CinemaBRScraper:
                     'link': url,
                     'deadline': 'Inscrições abertas - Verifique site'
                 })
-        except Exception as e:
-            print(f"Error: {e}")
+        except:
+            pass
         
         # Festival de Brasília
         try:
@@ -83,8 +82,8 @@ class CinemaBRScraper:
                     'link': url,
                     'deadline': 'Consultar site oficial'
                 })
-        except Exception as e:
-            print(f"Error: {e}")
+        except:
+            pass
         
         # Cine PE - Recife
         try:
@@ -97,8 +96,8 @@ class CinemaBRScraper:
                     'link': url,
                     'deadline': 'Verifique site oficial'
                 })
-        except Exception as e:
-            print(f"Error: {e}")
+        except:
+            pass
         
         # Curta Cinema
         try:
@@ -111,8 +110,8 @@ class CinemaBRScraper:
                     'link': url,
                     'deadline': 'Inscrições abertas'
                 })
-        except Exception as e:
-            print(f"Error: {e}")
+        except:
+            pass
         
         # In-Edit Brasil
         try:
@@ -125,8 +124,8 @@ class CinemaBRScraper:
                     'link': url,
                     'deadline': 'Consultar site'
                 })
-        except Exception as e:
-            print(f"Error: {e}")
+        except:
+            pass
         
         # Forumdoc.bh
         try:
@@ -139,8 +138,8 @@ class CinemaBRScraper:
                     'link': url,
                     'deadline': 'Verifique site oficial'
                 })
-        except Exception as e:
-            print(f"Error: {e}")
+        except:
+            pass
         
         # FestCurtas BH
         try:
@@ -153,8 +152,8 @@ class CinemaBRScraper:
                     'link': url,
                     'deadline': 'Inscrições abertas'
                 })
-        except Exception as e:
-            print(f"Error: {e}")
+        except:
+            pass
         
         # ANCINE
         try:
@@ -175,8 +174,8 @@ class CinemaBRScraper:
                             'deadline': 'Consultar edital'
                         })
                         break
-        except Exception as e:
-            print(f"Error: {e}")
+        except:
+            pass
         
         # Deduplicate by name
         seen = set()
@@ -199,7 +198,7 @@ class CinemaBRScraper:
             response = self.safe_get(url)
             if response:
                 soup = BeautifulSoup(response.text, 'html.parser')
-                for item in soup.find_all(['h2', 'h3'], class_=['news-title', 'title'])[:3]:
+                for item in soup.find_all(['h2', 'h3'])[:3]:
                     title = item.get_text(strip=True)
                     link_tag = item.find('a')
                     link = link_tag.get('href') if link_tag else url
@@ -211,8 +210,8 @@ class CinemaBRScraper:
                             'link': link,
                             'source': 'AdoroCinema'
                         })
-        except Exception as e:
-            print(f"Error: {e}")
+        except:
+            pass
         
         # Omelete
         try:
@@ -232,8 +231,8 @@ class CinemaBRScraper:
                             'link': link,
                             'source': 'Omelete'
                         })
-        except Exception as e:
-            print(f"Error: {e}")
+        except:
+            pass
         
         # ANCINE
         try:
@@ -252,8 +251,8 @@ class CinemaBRScraper:
                             'link': link if link else url,
                             'source': 'ANCINE'
                         })
-        except Exception as e:
-            print(f"Error: {e}")
+        except:
+            pass
         
         self.news = news_list[:8]
         return self.news
