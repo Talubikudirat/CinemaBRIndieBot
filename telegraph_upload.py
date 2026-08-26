@@ -1,23 +1,24 @@
-import telegraph
 from telegraph import Telegraph
 from datetime import datetime
 
 class TelegraphUploader:
     def __init__(self):
         self.telegraph = Telegraph()
-        self.telegraph.create_account(
-            short_name='CinemaBRIndie',
-            author_name='Cinema BR Indie Bot',
-            author_url='https://t.me/CinemaBRIndieBot'
-        )
+        try:
+            self.telegraph.create_account(
+                short_name='CinemaBRIndie',
+                author_name='Cinema BR Indie Bot',
+                author_url='https://t.me/CinemaBRIndieBot'
+            )
+        except Exception as e:
+            print(f"Telegraph account exists or error: {e}")
     
     def create_daily_article(self, data):
-        """Create a Telegraph article with ads"""
+        """Create a Telegraph article with ad placements"""
         
-        # Format the content with ads
         content = []
         
-        # Header
+        # HEADER
         content.append({
             "tag": "h1",
             "children": ["🎬 Resumo do Cinema Independente BR"]
@@ -33,29 +34,19 @@ class TelegraphUploader:
             "children": ["Confira os principais festivais, notícias e premiações do cinema independente brasileiro."]
         })
         
-        # AD PLACEMENT 1 - Adsterra Banner (replace with your own)
+        # AD PLACEMENT 1 - Replace with your ad code
         content.append({
-            "tag": "div",
+            "tag": "p",
             "children": [
-                {
-                    "tag": "p",
-                    "children": ["📢 ANÚNCIO"]
-                },
-                {
-                    "tag": "img",
-                    "attrs": {
-                        "src": "https://via.placeholder.com/728x90/FF6B6B/FFFFFF?text=Seu+Anuncio+Aqui",
-                        "alt": "Advertisement"
-                    }
-                },
-                {
-                    "tag": "i",
-                    "children": ["Este conteúdo é patrocinado - apoie o cinema independente!"]
-                }
+                "📢 ANÚNCIO - APOIE O CINEMA INDEPENDENTE",
+                {"tag": "br"},
+                {"tag": "img", "attrs": {"src": "https://via.placeholder.com/728x90/FF6B6B/FFFFFF?text=Anuncie+Aqui", "alt": "Ad"}},
+                {"tag": "br"},
+                {"tag": "i", "children": ["Este conteúdo é patrocinado"]}
             ]
         })
         
-        # Festivals Section
+        # FESTIVALS
         content.append({
             "tag": "h2",
             "children": ["🏆 Festivais em Andamento"]
@@ -66,40 +57,33 @@ class TelegraphUploader:
                 content.append({
                     "tag": "p",
                     "children": [
-                        f"**{f['name']}**",
+                        f"🎬 {f['name']}",
                         {"tag": "br"},
                         f"📝 {f['description']}",
                         {"tag": "br"},
-                        f"🔗 {f['link']}",
+                        {"tag": "a", "attrs": {"href": f['link']}, "children": ["🔗 Mais informações"]},
                         {"tag": "br"},
-                        f"⏰ {f['deadline']}"
+                        f"⏰ {f['deadline']}",
+                        {"tag": "br"}
                     ]
                 })
         else:
             content.append({
                 "tag": "p",
-                "children": ["Nenhum festival encontrado no momento. Volte amanhã!"]
+                "children": ["Nenhum festival encontrado no momento."]
             })
         
         # AD PLACEMENT 2
         content.append({
-            "tag": "div",
+            "tag": "p",
             "children": [
-                {
-                    "tag": "p",
-                    "children": ["📢 PUBLICIDADE"]
-                },
-                {
-                    "tag": "img",
-                    "attrs": {
-                        "src": "https://via.placeholder.com/300x250/4ECDC4/FFFFFF?text=Anuncie+Aqui",
-                        "alt": "Ad"
-                    }
-                }
+                "📢 PUBLICIDADE",
+                {"tag": "br"},
+                {"tag": "img", "attrs": {"src": "https://via.placeholder.com/300x250/4ECDC4/FFFFFF?text=Anuncie+Aqui", "alt": "Ad"}}
             ]
         })
         
-        # News Section
+        # NEWS
         content.append({
             "tag": "h2",
             "children": ["📰 Últimas Notícias"]
@@ -112,9 +96,10 @@ class TelegraphUploader:
                     "children": [
                         f"📌 {n['title']}",
                         {"tag": "br"},
-                        f"Fonte: {n['source']}",
+                        f"📡 Fonte: {n['source']}",
                         {"tag": "br"},
-                        f"🔗 {n['link']}"
+                        {"tag": "a", "attrs": {"href": n['link']}, "children": ["🔗 Leia mais"]},
+                        {"tag": "br"}
                     ]
                 })
         else:
@@ -123,25 +108,17 @@ class TelegraphUploader:
                 "children": ["Nenhuma notícia recente."]
             })
         
-        # AD PLACEMENT 3 - Bottom
+        # AD PLACEMENT 3
         content.append({
-            "tag": "div",
+            "tag": "p",
             "children": [
-                {
-                    "tag": "p",
-                    "children": ["📢 APOIE O CINEMA INDEPENDENTE"]
-                },
-                {
-                    "tag": "img",
-                    "attrs": {
-                        "src": "https://via.placeholder.com/728x90/FF6B6B/FFFFFF?text=Seu+Anuncio+Aqui",
-                        "alt": "Footer Ad"
-                    }
-                }
+                "📢 APOIE O CINEMA INDEPENDENTE",
+                {"tag": "br"},
+                {"tag": "img", "attrs": {"src": "https://via.placeholder.com/728x90/FF6B6B/FFFFFF?text=Seu+Anuncio+Aqui", "alt": "Footer Ad"}}
             ]
         })
         
-        # Awards Section
+        # AWARDS
         content.append({
             "tag": "h2",
             "children": ["🏅 Premiações"]
@@ -151,17 +128,18 @@ class TelegraphUploader:
             content.append({
                 "tag": "p",
                 "children": [
-                    f"**{a['name']}**",
+                    f"🎯 {a['name']}",
                     {"tag": "br"},
-                    f"🏷️ {a['category']}",
+                    f"🏷️ Categoria: {a['category']}",
                     {"tag": "br"},
-                    f"🎯 {a['winner']}",
+                    f"🏆 {a['winner']}",
                     {"tag": "br"},
-                    f"📅 {a['year']}"
+                    f"📅 {a['year']}",
+                    {"tag": "br"}
                 ]
             })
         
-        # Footer - Call to Action
+        # FOOTER
         content.append({
             "tag": "hr"
         })
@@ -170,16 +148,12 @@ class TelegraphUploader:
             "tag": "p",
             "children": [
                 "💡 Siga o ",
-                {
-                    "tag": "a",
-                    "attrs": {"href": "https://t.me/CinemaBRIndieBot"},
-                    "children": ["@CinemaBRIndieBot"]
-                },
+                {"tag": "a", "attrs": {"href": "https://t.me/CinemaBRIndieBot"}, "children": ["@CinemaBRIndieBot"]},
                 " para atualizações diárias!"
             ]
         })
         
-        # Publish to Telegraph
+        # PUBLISH
         try:
             response = self.telegraph.create_page(
                 title=f"Cinema Independente BR - {datetime.now().strftime('%d/%m/%Y')}",
@@ -190,5 +164,5 @@ class TelegraphUploader:
             )
             return response['url']
         except Exception as e:
-            print(f"Error creating page: {e}")
+            print(f"Error creating telegraph page: {e}")
             return None
