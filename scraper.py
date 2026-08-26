@@ -1,109 +1,185 @@
 import requests
 from bs4 import BeautifulSoup
+from datetime import datetime
 import re
-from datetime import datetime, timedelta
-import feedparser
+import json
+from urllib.parse import urljoin
 
 class CinemaBRScraper:
     def __init__(self):
         self.festivals = []
         self.news = []
         self.awards = []
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        })
     
     def get_festivals(self):
-        """Scrape from public Brazilian film festival sites"""
+        """Scrape Brazilian film festivals from public sources"""
         festivals_data = []
         
-        # 1. ANCINE - Public announcements (no API key needed)
+        # 1. ANCINE - Official Brazilian film agency
         try:
             url = "https://www.gov.br/ancine/pt-br/assuntos/noticias"
-            response = requests.get(url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            for item in soup.find_all('a', class_='summary'):
-                title = item.get_text(strip=True)
-                if 'festival' in title.lower() or 'edital' in title.lower():
-                    festivals_data.append({
-                        'name': title[:60],
-                        'description': 'Edital/Convênio ANCINE',
-                        'link': item.get('href', '#'),
-                        'deadline': 'Verifique o edital'
-                    })
-        except:
-            pass
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                # Look for news items
+                for item in soup.find_all(['a', 'div'], class_=['summary', 'title', 'item']):
+                    title = item.get_text(strip=True)
+                    if title and ('festival' in title.lower() or 'edital' in title.lower() or 'chamada' in title.lower()):
+                        link = item.get('href') if item.name == 'a' else ''
+                        if link and not link.startswith('http'):
+                            link = urljoin(url, link)
+                        festivals_data.append({
+                            'name': title[:80],
+                            'description': 'Edital/Convênio ANCINE - Verifique site oficial',
+                            'link': link if link else url,
+                            'deadline': 'Consultar edital'
+                        })
+                        break
+        except Exception as e:
+            print(f"Error scraping ANCINE: {e}")
         
-        # 2. Festival do Rio - Public schedule
+        # 2. Festival do Rio
         try:
-            url = "https://www.festivaldorio.com.br/"
-            response = requests.get(url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
-            soup = BeautifulSoup(response.text, 'html.parser')
-            # Just generic scraping - adjust as needed
-            festivals_data.append({
-                'name': 'Festival do Rio',
-                'description': 'Um dos maiores festivais de cinema do Brasil',
-                'link': url,
-                'deadline': 'Verifique site oficial'
-            })
-        except:
-            pass
+            url = "https://www.festivaldorio.com.br"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                # Try to find festival info
+                for tag in soup.find_all(['h1', 'h2', 'h3', 'p']):
+                    text = tag.get_text(strip=True)
+                    if 'festival' in text.lower() and ('inscri' in text.lower() or 'programa' in text.lower()):
+                        festivals_data.append({
+                            'name': 'Festival do Rio - ' + text[:50],
+                            'description': 'Festival Internacional de Cinema do Rio de Janeiro',
+                            'link': url,
+                            'deadline': 'Verifique site oficial'
+                        })
+                        break
+        except Exception as e:
+            print(f"Error scraping Festival do Rio: {e}")
         
         # 3. Festival de Gramado
         try:
-            festivals_data.append({
-                'name': 'Festival de Gramado',
-                'description': 'Principal festival de cinema brasileiro',
-                'link': 'https://www.festivaldegramado.net',
-                'deadline': 'Inscrições abertas anualmente'
-            })
-        except:
-            pass
+            url = "https://www.festivaldegramado.net"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                for tag in soup.find_all(['h1', 'h2', 'h3', 'p']):
+                    text = tag.get_text(strip=True)
+                    if 'inscri' in text.lower() or 'edital' in text.lower():
+                        festivals_data.append({
+                            'name': 'Festival de Gramado',
+                            'description': 'Principal festival de cinema brasileiro',
+                            'link': url,
+                            'deadline': 'Inscrições abertas - Verifique site'
+                        })
+                        break
+        except Exception as e:
+            print(f"Error scraping Festival de Gramado: {e}")
         
         # 4. Mostra de Cinema de Tiradentes
         try:
-            festivals_data.append({
-                'name': 'Mostra de Cinema de Tiradentes',
-                'description': 'Mostra de cinema independente',
-                'link': 'https://www.mostratiradentes.com.br',
-                'deadline': 'Inscrições abertas'
-            })
-        except:
-            pass
+            url = "https://www.mostratiradentes.com.br"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                festivals_data.append({
+                    'name': 'Mostra de Cinema de Tiradentes',
+                    'description': 'Mostra de cinema independente',
+                    'link': url,
+                    'deadline': 'Inscrições abertas - Verifique site'
+                })
+        except Exception as e:
+            print(f"Error scraping Tiradentes: {e}")
         
-        # 5. Brasília Festival - Cine Brasília
+        # 5. Festival de Brasília
         try:
-            festivals_data.append({
-                'name': 'Festival de Brasília do Cinema Brasileiro',
-                'description': 'Festival tradicional de cinema nacional',
-                'link': 'https://www.festivaldebrasilia.com.br',
-                'deadline': 'Consultar site'
-            })
-        except:
-            pass
+            url = "https://www.festivaldebrasilia.com.br"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                festivals_data.append({
+                    'name': 'Festival de Brasília do Cinema Brasileiro',
+                    'description': 'Festival tradicional de cinema nacional',
+                    'link': url,
+                    'deadline': 'Consultar site oficial'
+                })
+        except Exception as e:
+            print(f"Error scraping Brasília: {e}")
         
-        # 6. API pública de cinemas - Free RSS feeds
+        # 6. Cine PE - Festival do Recife
         try:
-            # Some festivals have RSS feeds (no key needed)
-            rss_urls = [
-                'https://www.festivaldorio.com.br/feed',
-                # Add more public RSS feeds
-            ]
-            for rss in rss_urls:
-                try:
-                    feed = feedparser.parse(rss)
-                    if feed.entries:
-                        for entry in feed.entries[:2]:
-                            festivals_data.append({
-                                'name': entry.title[:60] if hasattr(entry, 'title') else 'Evento',
-                                'description': entry.summary[:100] if hasattr(entry, 'summary') else 'Evento',
-                                'link': entry.link if hasattr(entry, 'link') else '#',
-                                'deadline': 'Verifique site'
-                            })
-                except:
-                    pass
-        except:
-            pass
+            url = "https://www.cinepe.com.br"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                festivals_data.append({
+                    'name': 'Cine PE - Festival do Recife',
+                    'description': 'Festival de cinema de Pernambuco',
+                    'link': url,
+                    'deadline': 'Verifique site oficial'
+                })
+        except Exception as e:
+            print(f"Error scraping Cine PE: {e}")
         
-        # Deduplicate
+        # 7. Curta Cinema - Festival de Curtas RJ
+        try:
+            url = "https://www.curtacinema.com.br"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                festivals_data.append({
+                    'name': 'Curta Cinema - Festival de Curtas do Rio',
+                    'description': 'Festival de curtas-metragens',
+                    'link': url,
+                    'deadline': 'Inscrições abertas'
+                })
+        except Exception as e:
+            print(f"Error scraping Curta Cinema: {e}")
+        
+        # 8. In-Edit Brasil - Documentários
+        try:
+            url = "https://www.in-editbrasil.com.br"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                festivals_data.append({
+                    'name': 'In-Edit Brasil',
+                    'description': 'Festival de documentários',
+                    'link': url,
+                    'deadline': 'Consultar site'
+                })
+        except Exception as e:
+            print(f"Error scraping In-Edit: {e}")
+        
+        # 9. Forumdoc.bh - Documentários
+        try:
+            url = "https://www.forumdocbh.com.br"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                festivals_data.append({
+                    'name': 'Forumdoc.bh',
+                    'description': 'Festival de documentários de Belo Horizonte',
+                    'link': url,
+                    'deadline': 'Verifique site oficial'
+                })
+        except Exception as e:
+            print(f"Error scraping Forumdoc: {e}")
+        
+        # 10. FestCurtasBH
+        try:
+            url = "https://www.festcurtasbh.com.br"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                festivals_data.append({
+                    'name': 'FestCurtas BH',
+                    'description': 'Festival de curtas de Belo Horizonte',
+                    'link': url,
+                    'deadline': 'Inscrições abertas'
+                })
+        except Exception as e:
+            print(f"Error scraping FestCurtas BH: {e}")
+        
+        # Deduplicate by name
         seen = set()
         unique_festivals = []
         for f in festivals_data:
@@ -111,65 +187,91 @@ class CinemaBRScraper:
                 seen.add(f['name'])
                 unique_festivals.append(f)
         
-        self.festivals = unique_festivals[:10]  # Limit to 10
+        self.festivals = unique_festivals[:10]
         return self.festivals
     
     def get_news(self):
-        """Scrape Brazilian cinema news from public sources"""
+        """Scrape Brazilian cinema news"""
         news_list = []
         
         # 1. ANCINE News
         try:
             url = "https://www.gov.br/ancine/pt-br/assuntos/noticias"
-            response = requests.get(url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            for item in soup.find_all('a', class_='summary')[:5]:
-                title = item.get_text(strip=True)
-                if title:
-                    news_list.append({
-                        'title': title[:100],
-                        'link': item.get('href', '#'),
-                        'source': 'ANCINE'
-                    })
-        except:
-            pass
-        
-        # 2. Cinema Brazil - Public site
-        try:
-            url = "https://cinemabrasil.com.br/"
-            response = requests.get(url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
-            soup = BeautifulSoup(response.text, 'html.parser')
-            for item in soup.find_all('h2', class_='entry-title')[:3]:
-                title = item.get_text(strip=True)
-                link = item.find('a')
-                if title:
-                    news_list.append({
-                        'title': title[:100],
-                        'link': link.get('href', '#') if link else '#',
-                        'source': 'Cinema Brasil'
-                    })
-        except:
-            pass
-        
-        # 3. Public RSS from film websites
-        try:
-            rss_feeds = [
-                'https://cinemabrasil.com.br/feed',
-            ]
-            for feed_url in rss_feeds:
-                try:
-                    feed = feedparser.parse(feed_url)
-                    for entry in feed.entries[:2]:
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                for item in soup.find_all('a', class_='summary')[:5]:
+                    title = item.get_text(strip=True)
+                    if title and len(title) > 5:
+                        link = item.get('href', '')
+                        if link and not link.startswith('http'):
+                            link = urljoin(url, link)
                         news_list.append({
-                            'title': entry.title[:100] if hasattr(entry, 'title') else 'Notícia',
-                            'link': entry.link if hasattr(entry, 'link') else '#',
-                            'source': 'RSS'
+                            'title': title[:100],
+                            'link': link if link else url,
+                            'source': 'ANCINE'
                         })
-                except:
-                    pass
-        except:
-            pass
+        except Exception as e:
+            print(f"Error scraping ANCINE news: {e}")
+        
+        # 2. Cinema Brazil
+        try:
+            url = "https://cinemabrasil.com.br"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                for item in soup.find_all(['h2', 'h3'], class_=['entry-title', 'post-title'])[:3]:
+                    title = item.get_text(strip=True)
+                    link_tag = item.find('a')
+                    link = link_tag.get('href') if link_tag else url
+                    if title and len(title) > 5:
+                        news_list.append({
+                            'title': title[:100],
+                            'link': link if link else url,
+                            'source': 'Cinema Brasil'
+                        })
+        except Exception as e:
+            print(f"Error scraping Cinema Brasil: {e}")
+        
+        # 3. Omelete - Brazilian pop culture
+        try:
+            url = "https://www.omelete.com.br/filmes"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                for item in soup.find_all(['h2', 'h3']) [:3]:
+                    title = item.get_text(strip=True)
+                    link_tag = item.find('a')
+                    link = link_tag.get('href') if link_tag else url
+                    if title and len(title) > 5 and 'filme' in title.lower():
+                        news_list.append({
+                            'title': title[:100],
+                            'link': link if link else url,
+                            'source': 'Omelete'
+                        })
+        except Exception as e:
+            print(f"Error scraping Omelete: {e}")
+        
+        # 4. AdoroCinema
+        try:
+            url = "https://www.adorocinema.com/noticias"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                for item in soup.find_all(['h2', 'h3']) [:3]:
+                    title = item.get_text(strip=True)
+                    link_tag = item.find('a')
+                    link = link_tag.get('href') if link_tag else url
+                    if title and len(title) > 5:
+                        if not link.startswith('http'):
+                            link = urljoin(url, link)
+                        news_list.append({
+                            'title': title[:100],
+                            'link': link if link else url,
+                            'source': 'AdoroCinema'
+                        })
+        except Exception as e:
+            print(f"Error scraping AdoroCinema: {e}")
         
         self.news = news_list[:8]
         return self.news
@@ -180,34 +282,56 @@ class CinemaBRScraper:
             {
                 'name': 'Grande Prêmio do Cinema Brasileiro',
                 'category': 'Melhor Filme',
-                'winner': 'Verifique site oficial',
+                'winner': 'Confira no site da ANCINE',
                 'year': datetime.now().year
             },
             {
                 'name': 'Festival de Gramado - Kikito de Ouro',
+                'category': 'Melhor Filme Brasileiro',
+                'winner': 'Resultados divulgados no site oficial',
+                'year': datetime.now().year
+            },
+            {
+                'name': 'Prêmio ABRACCINE',
                 'category': 'Melhor Filme',
-                'winner': 'Resultados do último festival',
+                'winner': 'Indicações e vencedores no site oficial',
+                'year': datetime.now().year
+            },
+            {
+                'name': 'Festival do Rio - Redentor',
+                'category': 'Competição Oficial',
+                'winner': 'Consultar site para vencedores',
+                'year': datetime.now().year
+            },
+            {
+                'name': 'Mostra de Tiradentes',
+                'category': 'Aurora de Ouro',
+                'winner': 'Resultados disponíveis no site',
                 'year': datetime.now().year
             }
         ]
         
-        # Try to get actual data
+        # Try to get actual data from ANCINE
         try:
-            url = "https://www.ancine.gov.br"
-            response = requests.get(url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
+            url = "https://www.gov.br/ancine/pt-br/assuntos/noticias"
+            response = self.session.get(url, timeout=15)
             if response.status_code == 200:
-                awards.append({
-                    'name': 'Edital ANCINE',
-                    'category': 'Fomento',
-                    'winner': 'Chamada pública aberta',
-                    'year': datetime.now().year
-                })
-        except:
-            pass
+                soup = BeautifulSoup(response.text, 'html.parser')
+                for item in soup.find_all('a', class_='summary')[:2]:
+                    title = item.get_text(strip=True)
+                    if 'edital' in title.lower() or 'chamada' in title.lower() or 'resultado' in title.lower():
+                        awards.append({
+                            'name': title[:50],
+                            'category': 'Edital ANCINE',
+                            'winner': 'Chamada pública - Verifique site',
+                            'year': datetime.now().year
+                        })
+        except Exception as e:
+            print(f"Error scraping awards: {e}")
         
         self.awards = awards
         return self.awards
-
+    
     def get_daily_summary(self):
         """Get all data in one call"""
         return {
