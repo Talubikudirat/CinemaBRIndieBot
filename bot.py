@@ -6,11 +6,7 @@ from scraper import CinemaBRScraper
 from telegraph_upload import TelegraphUploader
 from datetime import datetime
 
-# Setup logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
@@ -24,7 +20,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = """
 🎬 **Bem-vindo ao Cinema BR Indie Bot!**
 
-Eu sou seu assistente pessoal para o cinema independente brasileiro.
+Eu sou seu assistente para o cinema independente brasileiro.
 
 ⚡ **Comandos:**
 /festivais → Festivais em andamento
@@ -36,14 +32,10 @@ Eu sou seu assistente pessoal para o cinema independente brasileiro.
 Boa sorte com sua inscrição! 🍿
     """
     keyboard = [
-        [
-            InlineKeyboardButton("📅 Hoje", callback_data="today"),
-            InlineKeyboardButton("🎬 Festivais", callback_data="festivals")
-        ],
-        [
-            InlineKeyboardButton("📰 Notícias", callback_data="news"),
-            InlineKeyboardButton("🏅 Premiações", callback_data="awards")
-        ]
+        [InlineKeyboardButton("📅 Hoje", callback_data="today")],
+        [InlineKeyboardButton("🎬 Festivais", callback_data="festivals")],
+        [InlineKeyboardButton("📰 Notícias", callback_data="news")],
+        [InlineKeyboardButton("🏅 Premiações", callback_data="awards")]
     ]
     await update.message.reply_text(welcome_text, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -131,7 +123,7 @@ def main():
     app.add_handler(CommandHandler("hoje", today))
     app.add_handler(CommandHandler("submissoes", submissions))
     app.add_handler(CallbackQueryHandler(handle_callback))
-    print("🤖 Bot running...")
+    print("🤖 Cinema BR Indie Bot is running...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
