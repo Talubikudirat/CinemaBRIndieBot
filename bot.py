@@ -1,223 +1,342 @@
-import os
-import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
-from scraper import CinemaBRScraper
-from telegraph_upload import TelegraphUploader
-import asyncio
+import requests
+from bs4 import BeautifulSoup
 from datetime import datetime
+import re
+import json
+from urllib.parse import urljoin
 
-# Setup logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
-
-# Get bot token from environment variable
-TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
-if not TOKEN:
-    raise ValueError("No TELEGRAM_BOT_TOKEN found in environment variables")
-
-# Initialize scrapers
-scraper = CinemaBRScraper()
-telegraph = TelegraphUploader()
-
-# Bot commands
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send a welcome message when /start is issued."""
-    welcome_text = """
-🎬 Bem-vindo ao Cinema BR Indie Bot!
-
-Eu sou seu assistente pessoal para o cinema independente brasileiro. Envio diariamente um resumo com os principais festivais, editais abertos e notícias do circuito indie.
-
-📌 O que você encontra aqui:
-✅ Festivais regionais (Nordeste, Sul, Sudeste, Centro-Oeste)
-✅ Prazos de submissão de filmes (curtas, longas, docs)
-✅ Chamadas públicas e leis de incentivo
-✅ Premiações e resultados de festivais
-✅ Oportunidades de distribuição e mercado
-
-⚡ Comandos rápidos:
-/festivais → Veja os festivais em andamento
-/submissoes → Prazos abertos para inscrição
-/noticias → Últimas notícias do indie BR
-/premiados → Filmes premiados na semana
-/hoje → Resumo diário (completo)
-
-📖 Para ler a análise completa, clique no link que envio todos os dias.
-
-Boa sorte com sua inscrição! 🍿🎥
-    """
-    
-    keyboard = [
-        [
-            InlineKeyboardButton("📅 Resumo de Hoje", callback_data="today"),
-            InlineKeyboardButton("🎬 Festivais", callback_data="festivals")
-        ],
-        [
-            InlineKeyboardButton("📰 Notícias", callback_data="news"),
-            InlineKeyboardButton("🏅 Premiações", callback_data="awards")
-        ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text(welcome_text, reply_markup=reply_markup)
-
-async def festivals(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show current festivals"""
-    await update.message.reply_text("🔄 Buscando festivais...")
-    
-    data = scraper.get_festivals()
-    if data:
-        response = "🏆 **Festivais em Andamento:**\n\n"
-        for f in data[:5]:
-            response += f"🎬 **{f['name']}**\n"
-            response += f"📝 {f['description']}\n"
-            response += f"🔗 [Mais informações]({f['link']})\n"
-            response += f"⏰ {f['deadline']}\n\n"
-        
-        # Generate Telegraph article
-        telegraph_url = telegraph.create_daily_article({
-            'festivals': data,
-            'news': scraper.get_news(),
-            'awards': scraper.get_awards(),
-            'date': datetime.now().strftime('%d/%m/%Y')
+class CinemaBRScraper:
+    def __init__(self):
+        self.festivals = []
+        self.news = []
+        self.awards = []
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         })
+    
+    def get_festivals(self):
+        """Scrape Brazilian film festivals from public sources"""
+        festivals_data = []
         
-        if telegraph_url:
-            response += f"\n📖 **Leia a análise completa:**\n{telegraph_url}"
+        # 1. ANCINE - Official Brazilian film agency
+        try:
+            url = "https://www.gov.br/ancine/pt-br/assuntos/noticias"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                # Look for news items
+                for item in soup.find_all(['a', 'div'], class_=['summary', 'title', 'item']):
+                    title = item.get_text(strip=True)
+                    if title and ('festival' in title.lower() or 'edital' in title.lower() or 'chamada' in title.lower()):
+                        link = item.get('href') if item.name == 'a' else ''
+                        if link and not link.startswith('http'):
+                            link = urljoin(url, link)
+                        festivals_data.append({
+                            'name': title[:80],
+                            'description': 'Edital/Convênio ANCINE - Verifique site oficial',
+                            'link': link if link else url,
+                            'deadline': 'Consultar edital'
+                        })
+                        break
+        except Exception as e:
+            print(f"Error scraping ANCINE: {e}")
         
-        await update.message.reply_text(response, parse_mode='Markdown', disable_web_page_preview=True)
-    else:
-        await update.message.reply_text("❌ Não foi possível buscar festivais no momento. Tente novamente mais tarde.")
-
-async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show latest news"""
-    await update.message.reply_text("🔄 Buscando notícias...")
-    
-    data = scraper.get_news()
-    if data:
-        response = "📰 **Últimas Notícias do Cinema BR:**\n\n"
-        for n in data[:5]:
-            response += f"📌 **{n['title']}**\n"
-            response += f"📡 Fonte: {n['source']}\n"
-            response += f"🔗 [Leia mais]({n['link']})\n\n"
+        # 2. Festival do Rio
+        try:
+            url = "https://www.festivaldorio.com.br"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                # Try to find festival info
+                for tag in soup.find_all(['h1', 'h2', 'h3', 'p']):
+                    text = tag.get_text(strip=True)
+                    if 'festival' in text.lower() and ('inscri' in text.lower() or 'programa' in text.lower()):
+                        festivals_data.append({
+                            'name': 'Festival do Rio - ' + text[:50],
+                            'description': 'Festival Internacional de Cinema do Rio de Janeiro',
+                            'link': url,
+                            'deadline': 'Verifique site oficial'
+                        })
+                        break
+        except Exception as e:
+            print(f"Error scraping Festival do Rio: {e}")
         
-        await update.message.reply_text(response, parse_mode='Markdown', disable_web_page_preview=True)
-    else:
-        await update.message.reply_text("❌ Não foi possível buscar notícias no momento.")
-
-async def awards(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show recent awards"""
-    data = scraper.get_awards()
-    response = "🏅 **Premiações do Cinema Brasileiro:**\n\n"
-    for a in data:
-        response += f"**{a['name']}**\n"
-        response += f"🏷️ Categoria: {a['category']}\n"
-        response += f"🎯 {a['winner']}\n"
-        response += f"📅 {a['year']}\n\n"
+        # 3. Festival de Gramado
+        try:
+            url = "https://www.festivaldegramado.net"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                for tag in soup.find_all(['h1', 'h2', 'h3', 'p']):
+                    text = tag.get_text(strip=True)
+                    if 'inscri' in text.lower() or 'edital' in text.lower():
+                        festivals_data.append({
+                            'name': 'Festival de Gramado',
+                            'description': 'Principal festival de cinema brasileiro',
+                            'link': url,
+                            'deadline': 'Inscrições abertas - Verifique site'
+                        })
+                        break
+        except Exception as e:
+            print(f"Error scraping Festival de Gramado: {e}")
+        
+        # 4. Mostra de Cinema de Tiradentes
+        try:
+            url = "https://www.mostratiradentes.com.br"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                festivals_data.append({
+                    'name': 'Mostra de Cinema de Tiradentes',
+                    'description': 'Mostra de cinema independente',
+                    'link': url,
+                    'deadline': 'Inscrições abertas - Verifique site'
+                })
+        except Exception as e:
+            print(f"Error scraping Tiradentes: {e}")
+        
+        # 5. Festival de Brasília
+        try:
+            url = "https://www.festivaldebrasilia.com.br"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                festivals_data.append({
+                    'name': 'Festival de Brasília do Cinema Brasileiro',
+                    'description': 'Festival tradicional de cinema nacional',
+                    'link': url,
+                    'deadline': 'Consultar site oficial'
+                })
+        except Exception as e:
+            print(f"Error scraping Brasília: {e}")
+        
+        # 6. Cine PE - Festival do Recife
+        try:
+            url = "https://www.cinepe.com.br"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                festivals_data.append({
+                    'name': 'Cine PE - Festival do Recife',
+                    'description': 'Festival de cinema de Pernambuco',
+                    'link': url,
+                    'deadline': 'Verifique site oficial'
+                })
+        except Exception as e:
+            print(f"Error scraping Cine PE: {e}")
+        
+        # 7. Curta Cinema - Festival de Curtas RJ
+        try:
+            url = "https://www.curtacinema.com.br"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                festivals_data.append({
+                    'name': 'Curta Cinema - Festival de Curtas do Rio',
+                    'description': 'Festival de curtas-metragens',
+                    'link': url,
+                    'deadline': 'Inscrições abertas'
+                })
+        except Exception as e:
+            print(f"Error scraping Curta Cinema: {e}")
+        
+        # 8. In-Edit Brasil - Documentários
+        try:
+            url = "https://www.in-editbrasil.com.br"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                festivals_data.append({
+                    'name': 'In-Edit Brasil',
+                    'description': 'Festival de documentários',
+                    'link': url,
+                    'deadline': 'Consultar site'
+                })
+        except Exception as e:
+            print(f"Error scraping In-Edit: {e}")
+        
+        # 9. Forumdoc.bh - Documentários
+        try:
+            url = "https://www.forumdocbh.com.br"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                festivals_data.append({
+                    'name': 'Forumdoc.bh',
+                    'description': 'Festival de documentários de Belo Horizonte',
+                    'link': url,
+                    'deadline': 'Verifique site oficial'
+                })
+        except Exception as e:
+            print(f"Error scraping Forumdoc: {e}")
+        
+        # 10. FestCurtasBH
+        try:
+            url = "https://www.festcurtasbh.com.br"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                festivals_data.append({
+                    'name': 'FestCurtas BH',
+                    'description': 'Festival de curtas de Belo Horizonte',
+                    'link': url,
+                    'deadline': 'Inscrições abertas'
+                })
+        except Exception as e:
+            print(f"Error scraping FestCurtas BH: {e}")
+        
+        # Deduplicate by name
+        seen = set()
+        unique_festivals = []
+        for f in festivals_data:
+            if f['name'] not in seen:
+                seen.add(f['name'])
+                unique_festivals.append(f)
+        
+        self.festivals = unique_festivals[:10]
+        return self.festivals
     
-    await update.message.reply_text(response, parse_mode='Markdown')
-
-async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Daily summary with Telegraph link"""
-    await update.message.reply_text("🔄 Gerando resumo diário...")
+    def get_news(self):
+        """Scrape Brazilian cinema news"""
+        news_list = []
+        
+        # 1. ANCINE News
+        try:
+            url = "https://www.gov.br/ancine/pt-br/assuntos/noticias"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                for item in soup.find_all('a', class_='summary')[:5]:
+                    title = item.get_text(strip=True)
+                    if title and len(title) > 5:
+                        link = item.get('href', '')
+                        if link and not link.startswith('http'):
+                            link = urljoin(url, link)
+                        news_list.append({
+                            'title': title[:100],
+                            'link': link if link else url,
+                            'source': 'ANCINE'
+                        })
+        except Exception as e:
+            print(f"Error scraping ANCINE news: {e}")
+        
+        # 2. Cinema Brazil
+        try:
+            url = "https://cinemabrasil.com.br"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                for item in soup.find_all(['h2', 'h3'], class_=['entry-title', 'post-title'])[:3]:
+                    title = item.get_text(strip=True)
+                    link_tag = item.find('a')
+                    link = link_tag.get('href') if link_tag else url
+                    if title and len(title) > 5:
+                        news_list.append({
+                            'title': title[:100],
+                            'link': link if link else url,
+                            'source': 'Cinema Brasil'
+                        })
+        except Exception as e:
+            print(f"Error scraping Cinema Brasil: {e}")
+        
+        # 3. Omelete - Brazilian pop culture
+        try:
+            url = "https://www.omelete.com.br/filmes"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                for item in soup.find_all(['h2', 'h3']) [:3]:
+                    title = item.get_text(strip=True)
+                    link_tag = item.find('a')
+                    link = link_tag.get('href') if link_tag else url
+                    if title and len(title) > 5 and 'filme' in title.lower():
+                        news_list.append({
+                            'title': title[:100],
+                            'link': link if link else url,
+                            'source': 'Omelete'
+                        })
+        except Exception as e:
+            print(f"Error scraping Omelete: {e}")
+        
+        # 4. AdoroCinema
+        try:
+            url = "https://www.adorocinema.com/noticias"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                for item in soup.find_all(['h2', 'h3']) [:3]:
+                    title = item.get_text(strip=True)
+                    link_tag = item.find('a')
+                    link = link_tag.get('href') if link_tag else url
+                    if title and len(title) > 5:
+                        if not link.startswith('http'):
+                            link = urljoin(url, link)
+                        news_list.append({
+                            'title': title[:100],
+                            'link': link if link else url,
+                            'source': 'AdoroCinema'
+                        })
+        except Exception as e:
+            print(f"Error scraping AdoroCinema: {e}")
+        
+        self.news = news_list[:8]
+        return self.news
     
-    data = scraper.get_daily_summary()
+    def get_awards(self):
+        """Get recent award winners"""
+        awards = [
+            {
+                'name': 'Grande Prêmio do Cinema Brasileiro',
+                'category': 'Melhor Filme',
+                'winner': 'Confira no site da ANCINE',
+                'year': datetime.now().year
+            },
+            {
+                'name': 'Festival de Gramado - Kikito de Ouro',
+                'category': 'Melhor Filme Brasileiro',
+                'winner': 'Resultados divulgados no site oficial',
+                'year': datetime.now().year
+            },
+            {
+                'name': 'Prêmio ABRACCINE',
+                'category': 'Melhor Filme',
+                'winner': 'Indicações e vencedores no site oficial',
+                'year': datetime.now().year
+            },
+            {
+                'name': 'Festival do Rio - Redentor',
+                'category': 'Competição Oficial',
+                'winner': 'Consultar site para vencedores',
+                'year': datetime.now().year
+            },
+            {
+                'name': 'Mostra de Tiradentes',
+                'category': 'Aurora de Ouro',
+                'winner': 'Resultados disponíveis no site',
+                'year': datetime.now().year
+            }
+        ]
+        
+        # Try to get actual data from ANCINE
+        try:
+            url = "https://www.gov.br/ancine/pt-br/assuntos/noticias"
+            response = self.session.get(url, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                for item in soup.find_all('a', class_='summary')[:2]:
+                    title = item.get_text(strip=True)
+                    if 'edital' in title.lower() or 'chamada' in title.lower() or 'resultado' in title.lower():
+                        awards.append({
+                            'name': title[:50],
+                            'category': 'Edital ANCINE',
+                            'winner': 'Chamada pública - Verifique site',
+                            'year': datetime.now().year
+                        })
+        except Exception as e:
+            print(f"Error scraping awards: {e}")
+        
+        self.awards = awards
+        return self.awards
     
-    # Create Telegraph article
-    telegraph_url = telegraph.create_daily_article(data)
-    
-    if telegraph_url:
-        response = f"""
-📅 **Resumo do Cinema Independente BR** - {data['date']}
-
-📊 **Resumo:**
-• {len(data['festivals'])} festivais em andamento
-• {len(data['news'])} notícias atualizadas
-• {len(data['awards'])} premiações listadas
-
-📖 **Confira a análise completa:**
-{telegraph_url}
-
-🔔 Use /festivais, /noticias ou /premiados para detalhes específicos.
-        """
-        await update.message.reply_text(response, parse_mode='Markdown', disable_web_page_preview=True)
-    else:
-        await update.message.reply_text("❌ Erro ao gerar o resumo. Tente novamente mais tarde.")
-
-async def submissions(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show open submissions"""
-    response = """
-📅 **Prazos de Submissão Abertos:**
-
-🎬 **Festival de Gramado 2026**
-📝 Inscrições abertas para curtas e longas
-⏰ Prazo: Verifique site oficial
-🔗 https://www.festivaldegramado.net
-
-🎬 **Mostra de Cinema de Tiradentes**
-📝 Submissão de filmes independentes
-⏰ Prazo: Em breve
-🔗 https://www.mostratiradentes.com.br
-
-🎬 **Festival do Rio 2026**
-📝 Inscrições para mostras competitivas
-⏰ Prazo: Acompanhe site
-🔗 https://www.festivaldorio.com.br
-
-📢 Fique atento aos editais da ANCINE para fomento!
-🔗 https://www.gov.br/ancine
-    """
-    await update.message.reply_text(response, parse_mode='Markdown')
-
-async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle inline keyboard callbacks"""
-    query = update.callback_query
-    await query.answer()
-    
-    if query.data == "today":
-        await today(update, context)
-    elif query.data == "festivals":
-        # Need to handle this differently since we don't have the original message
-        await query.message.reply_text("🔄 Buscando festivais...")
-        data = scraper.get_festivals()
-        response = "🏆 **Festivais em Andamento:**\n\n"
-        for f in data[:5]:
-            response += f"🎬 **{f['name']}**\n📝 {f['description']}\n🔗 [Mais informações]({f['link']})\n\n"
-        await query.message.reply_text(response, parse_mode='Markdown', disable_web_page_preview=True)
-    elif query.data == "news":
-        await news(update, context)
-    elif query.data == "awards":
-        await awards(update, context)
-
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Log errors"""
-    logger.error(f"Update {update} caused error {context.error}")
-
-def main():
-    """Start the bot"""
-    # Create application
-    application = Application.builder().token(TOKEN).build()
-    
-    # Add command handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("festivais", festivals))
-    application.add_handler(CommandHandler("noticias", news))
-    application.add_handler(CommandHandler("premiados", awards))
-    application.add_handler(CommandHandler("hoje", today))
-    application.add_handler(CommandHandler("submissoes", submissions))
-    
-    # Callback handler for inline buttons
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_callback))
-    
-    # Error handler
-    application.add_error_handler(error_handler)
-    
-    # Start the bot
-    print("🤖 Cinema BR Indie Bot is running...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
-
-if __name__ == '__main__':
-    main()
+    def get_daily_summary(self):
+        """Get all data in one call"""
+        return {
+            'festivals': self.get_festivals(),
+            'news': self.get_news(),
+            'awards': self.get_awards(),
+            'date': datetime.now().strftime('%d/%m/%Y')
+        }
